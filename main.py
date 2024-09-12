@@ -13,7 +13,7 @@ n = screen_width // tile_size  # Número de tiles por linha
 
 # Configurando a tela
 screen = pygame.display.set_mode((screen_width, screen_height))
-pygame.display.set_caption('Tile Grid com Bola Arrastável')
+pygame.display.set_caption('shadows casting demo')
 
 # Cores
 WHITE = (255, 255, 255)
@@ -56,7 +56,8 @@ def draw_tiles():
     visibility_triangles = LineOfSight.build_visibility_triangles(polymap.edges, ball_pos, (screen_width, screen_height))
     if visibility_triangles:
         for triangle in visibility_triangles:
-            pygame.draw.polygon(screen, (0, 255, 0), triangle)
+            #pygame.draw.lines(screen, RED, True, triangle)
+            pygame.draw.polygon(screen, (255, 240, 180), triangle)
 
         
 
@@ -100,9 +101,9 @@ while running:
 
     # Desenha o cenário
     screen.fill(BLACK)
-    draw_grid()
     draw_tiles()
     draw_ball()
+    draw_grid()
 
     pygame.display.flip()
     pygame.time.Clock().tick(60)

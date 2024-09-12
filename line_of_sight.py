@@ -1,13 +1,20 @@
 from __future__ import annotations
-from math import atan2
+from math import atan2, sqrt
 from edge import Edge
-from vector import Vector2
-import numpy as np
+from functools import cmp_to_key
 
 
 class LineOfSight:
     def __init__(self) -> None:
         pass
+
+    @staticmethod
+    def distance(p1: tuple[int, int], p2: tuple[int, int]) -> float:
+        """
+        Calculate the distance between two points.
+        """
+
+        return sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
 
     @staticmethod
     def angle(source: tuple[int, int], target: tuple[int, int]) -> float:
@@ -16,9 +23,7 @@ class LineOfSight:
         """
 
         # Calculate the angle between the source and target points
-        angle = -np.arctan2(target[1] - source[1], target[0] - source[0])
-
-
+        angle = -atan2(target[1] - source[1], target[0] - source[0])
         return angle
     
     @staticmethod
@@ -38,123 +43,123 @@ class LineOfSight:
         return LineOfSight.is_clockwise(source, start, end)
         
     @staticmethod
-    def raycast(wall: Edge, ray_start, ray_dir) -> tuple[int, int] | None:
+    def line_intersection(p1_start: tuple[int, int], p1_end: tuple[int, int], 
+                p2_start: tuple[int, int], p2_end: tuple[int, int]) -> tuple[float, float]:
         """
-        Raycast from the source point (ray_start) in the direction (ray_dir) to check for
-        an intersection with the wall (Edge). Returns the intersection point if found, otherwise None.
-        """
-        # Unpack the wall's start and end points
-        x1, y1 = wall.start
-        x2, y2 = wall.end
-
-        # Unpack the ray's starting point and direction
-        x3, y3 = ray_start
-        dx_ray, dy_ray = ray_dir
-
-        #normalize the ray direction
-        #norm = (dx_ray ** 2 + dy_ray ** 2) ** 0.5
-        #dx_ray /= norm
-        #dy_ray /= norm
+        Calculate the intersection point between two lines (p1_start -> p1_end and p2_start -> p2_end).
+        The lines are represented by two points each.
         
+        Returns:
+            The intersection point as a tuple (x, y) if the lines intersect, otherwise None.
+        """
+        x1, y1 = p1_start
+        x2, y2 = p1_end
+        x3, y3 = p2_start
+        x4, y4 = p2_end
 
-        # Calculate wall direction (vector)
-        dx_wall = x2 - x1
-        dy_wall = y2 - y1
+        # Determinant
+        denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
 
-        # Denominator for determining intersection (based on 2D cross product)
-        denominator = (-dx_ray * dy_wall + dx_wall * dy_ray)
+        # If the determinant is zero, the lines are parallel
+        if denom == 0:
+            return None
 
-        # If the denominator is zero, the lines are parallel and do not intersect
-        if abs(denominator) < 1e-6:
-            return (ray_start[0] + ray_dir[0], ray_start[1] + ray_dir[1])  # No intersection (or the lines are nearly parallel)
+        # Calculate the intersection point
+        px = ((x1 * y2 - y1 * x2) * (x3 - x4) - (x1 - x2) * (x3 * y4 - y3 * x4)) / denom
+        py = ((x1 * y2 - y1 * x2) * (y3 - y4) - (y1 - y2) * (x3 * y4 - y3 * x4)) / denom
 
-        # Numerators for solving the parametric intersection equations
-        t_wall = (dx_ray * (y3 - y1) - dy_ray * (x3 - x1)) / denominator
-        t_ray = (-dx_wall * (y3 - y1) + dy_wall * (x3 - x1)) / denominator
+        return (px, py) 
+    
+    @staticmethod
+    def build_triangle(source : tuple[int, int], old_vertex : tuple[int, int], current_vertex : tuple[int, int], closest_old_wall : Edge) -> (tuple[int, int, int]):
+        """
+        Build a visibility triangle from the source point to the current vertex.
+        """
+        dist1 = LineOfSight.distance(source, old_vertex)
+        dist2 = LineOfSight.distance(source, current_vertex)
 
-        # Check if the intersection occurs within the bounds of the wall and along the ray
-        if 0 <= t_wall <= 1 and t_ray >= 0:
-            # Calculate the intersection point
-            intersection_x = x3 + t_ray * dx_ray
-            intersection_y = y3 + t_ray * dy_ray
-            return (int(intersection_x), int(intersection_y))
+        closest_vertex = old_vertex if dist1 < dist2 else current_vertex
+        far_vertex = current_vertex if dist1 < dist2 else old_vertex
+        close_hit_point = LineOfSight.line_intersection(source, closest_vertex, closest_old_wall.start, closest_old_wall.end)
+        far_hit_point = LineOfSight.line_intersection(source, far_vertex, closest_old_wall.start, closest_old_wall.end)
 
-        return (ray_start[0] + ray_dir[0], ray_start[1] + ray_dir[1])  # No intersection (or the lines are nearly parallel)
+        if not close_hit_point:
+            close_hit_point = closest_vertex
+
+        if not far_hit_point:
+            far_hit_point = far_vertex
+
+        return (source, far_hit_point, close_hit_point)
 
     @staticmethod
     def build_visibility_triangles(walls: set[Edge], source: tuple[int, int], map_size: tuple[int, int]) -> list[tuple[int, int]]:
         """
         Build the visibility polygon from the source point.
         """
+        ##### pygame stuff #######
+        # Invert the y-coordinate of the source point
+        source = (source[0], map_size[1] - source[1]) 
+        # invert the y-coordinate of the walls
+        walls = [Edge((wall.start[0], map_size[1] - wall.start[1]), (wall.end[0], map_size[1] - wall.end[1])) for wall in walls]
+        ##### pygame stuff #######
+
         # Add the limits of the map as walls
         limits = [Edge((0, 0), (0, map_size[1])),
                 Edge((0, map_size[1]), (map_size[0], map_size[1])),
                 Edge((map_size[0], map_size[1]), (map_size[0], 0)),
                 Edge((map_size[0], 0), (0, 0))]
         
-        source = (source[0], map_size[1] - source[1])  # Invert the y-coordinate of the source point
-        #invert the y-coordinate of the walls
-        walls = [Edge((wall.start[0], map_size[1] - wall.start[1]), (wall.end[0], map_size[1] - wall.end[1])) for wall in walls]
+        # Combine walls with map limits
+        walls = walls + limits 
 
-
-        walls = walls + limits  # Combine walls with map limits
-
-        # Create a dictionary with the vertices of the walls ordered by angle from the source
-        wall_per_vertex = {}
+        # Create a dictionary with the vertices of the walls
+        walls_per_vertex = {}
         for wall in walls:
-            if wall.start not in wall_per_vertex:
-                wall_per_vertex[wall.start] = []
-            if wall.end not in wall_per_vertex:
-                wall_per_vertex[wall.end] = []
+            if wall.start not in walls_per_vertex:
+                walls_per_vertex[wall.start] = []
+            if wall.end not in walls_per_vertex:
+                walls_per_vertex[wall.end] = []
 
-            wall_per_vertex[wall.start].append(wall)
-            wall_per_vertex[wall.end].append(wall)
+            walls_per_vertex[wall.start].append(wall)
+            walls_per_vertex[wall.end].append(wall)
         
-        #vertices = dict(sorted(vertices.items(), key=lambda x: LineOfSight.angle(source, x[0])))
-        vertices = list(wall_per_vertex.keys())
-        vertices.sort(key=lambda x: LineOfSight.angle(source, x))
-        #create a list of type tuple[tuple[int,int], list[Edge]]
-        wall_per_vertex = [(vertice, wall_per_vertex[vertice]) for vertice in vertices]
+        # Sort the vertices by angle from the source
+        walls_per_vertex = dict(sorted(walls_per_vertex.items(), key=lambda x: LineOfSight.angle(source, x[0])))
 
         # Initialize the open list of walls and the final polygon points
         open_walls = []
         polygon = []
-        current_nearest_wall = None
-        last_vertice = None
+        old_vertex = None
 
-        # Iterate over vertices sorted by angle
-        for vertice, walls in wall_per_vertex:
-            # Add walls to the open list or remove if already in the list
-            for wall in walls:
-                if wall in open_walls and LineOfSight.is_end_point(vertice, wall, source):
-                    open_walls.remove(wall)
-                elif wall not in open_walls and not LineOfSight.is_end_point(vertice, wall, source):
-                    open_walls.append(wall)
+        #the first pass is only to find the first wall and the last wall
+        for passes in range(2):
+            # Iterate over vertices sorted by angle
+            for vertex in walls_per_vertex.keys():
+                # get the old closest wall
+                old_nearest_wall = open_walls[0] if open_walls else None
 
-            # Find the nearest wall
-            nearest_wall = None
-            for wall in open_walls:
-                if nearest_wall is None or wall.distance(source) < nearest_wall.distance(source):
-                    nearest_wall = wall
+                # Add walls that start at the current vertex and remove wall that end at this vertex
+                for wall in walls_per_vertex[vertex]:
+                    if wall not in open_walls and not LineOfSight.is_end_point(vertex, wall, source):
+                        open_walls.append(wall)
+                    if wall in open_walls and LineOfSight.is_end_point(vertex, wall, source):
+                        open_walls.remove(wall)
 
-            # If the nearest wall has changed, create a visibility triangle
-            if nearest_wall != current_nearest_wall:
-                if current_nearest_wall:
-                    ray_dir = (vertice[0] - source[0], vertice[1] - source[1])
-                    hit_point = LineOfSight.raycast(current_nearest_wall, source, ray_dir)
-                    
-                    if not hit_point:
-                        print("This was not supossed to happen. Error in raycast")
-                        break
-                    polygon.append((source, last_vertice, hit_point))
-                last_vertice = vertice
-                current_nearest_wall = nearest_wall
-            
+                # Find the new closest wall
+                open_walls.sort(key=lambda x: x.distance(source))
+                new_nearest_wall = open_walls[0] if open_walls else None
+                
+                # If the nearest wall has changed, create a visibility triangle
+                if new_nearest_wall != old_nearest_wall:
+                    if old_nearest_wall and passes == 1:
+                        triangle = LineOfSight.build_triangle(source, old_vertex, vertex, old_nearest_wall)
+                        polygon.append(triangle)
+                    old_vertex = vertex
 
-        polygon.append((source, polygon[-1][-1], polygon[0][1]))
-
+        ###### pygame stuff ######
         #invert the y-coordinate of the polygon
         polygon = [[(point[0], map_size[1] - point[1]) for point in triangle] for triangle in polygon]
+        ###### pygame stuff ######
 
         return polygon
 
