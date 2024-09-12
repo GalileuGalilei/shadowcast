@@ -14,3 +14,13 @@ class Edge:
         x1, y1 = self.start
         x2, y2 = self.end
         return abs((y2 - y1) * x - (x2 - x1) * y + x2 * y1 - y2 * x1) / self.lenght()
+    
+    def __eq__(self, other):
+        if not isinstance(other, Edge):
+            return False
+        return self.start == other.start and self.end == other.end or self.start == other.end and self.end == other.start
+    
+    def __hash__(self):
+        return hash((self.start, self.end))
+    
+    

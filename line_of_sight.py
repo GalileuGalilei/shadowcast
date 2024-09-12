@@ -11,56 +11,67 @@ class LineOfSight:
     @staticmethod
     def angle(source: tuple[int, int], target: tuple[int, int]) -> float:
         """
-        Calculate the angle between the source point and the target point
+        comparision function to sort points by angle from the source point.
         """
 
-        return atan2(target[1] - source[1], target[0] - source[0])
+        # Calculate the angle between the source and target points
+        angle = atan2(target[1] - source[1], target[0] - source[0])
+        return angle
+    
+    @staticmethod
+    def is_clockwise(p1: tuple[int, int], p2: tuple[int, int], p3: tuple[int, int]) -> bool:
+        """
+        Check if the points are in clockwise order.
+        """
+        return (p2[0] - p1[0]) * (p3[1] - p1[1]) - (p2[1] - p1[1]) * (p3[0] - p1[0]) < 0
+        
 
     @staticmethod
-    def projection(wall: Edge, source: tuple[int, int], len: tuple[int, int]) -> tuple[int, int]:
+    def raycast(wall: Edge, ray_start, ray_dir) -> tuple[int, int] | None:
         """
-        Calculate the intersection of a vector (ray) from the source point passing through the len point 
-        with the line segment representing the wall.
-
-        :param wall: An Edge object representing the wall with start and end points (x, y).
-        :param source: A tuple representing the source point (x, y).
-        :param len: A tuple representing the direction point for the projection (x, y).
-        :return: A tuple representing the coordinates of the intersection point (x, y), or None if no intersection exists.
+        Raycast from the source point (ray_start) in the direction (ray_dir) to check for
+        an intersection with the wall (Edge). Returns the intersection point if found, otherwise None.
         """
-
-        # Função auxiliar para calcular o determinante 2x2 (serve para calcular a área)
-        def determinant(a, b, c, d):
-            return a * d - b * c
-
-        # Coordenadas da parede (wall)
+        # Unpack the wall's start and end points
         x1, y1 = wall.start
         x2, y2 = wall.end
 
-        # Coordenadas da linha (ray) que passa por source e len
-        x3, y3 = source
-        x4, y4 = len
+        # Unpack the ray's starting point and direction
+        x3, y3 = ray_start
+        dx_ray, dy_ray = ray_dir
 
-        # Cálculo dos determinantes
-        denom = determinant(x1 - x2, y1 - y2, x3 - x4, y3 - y4)
+        #normalize the ray direction
+        norm = (dx_ray ** 2 + dy_ray ** 2) ** 0.5
+        dx_ray /= norm
+        
 
-        # Se o determinante for zero, as linhas são paralelas ou coincidentes
-        if denom == 0:
-            return len
+        # Calculate wall direction (vector)
+        dx_wall = x2 - x1
+        dy_wall = y2 - y1
 
-        # Calcula as interseções em termos de t e u (parâmetros de linha)
-        t = determinant(x1 - x3, y1 - y3, x3 - x4, y3 - y4) / denom
-        u = determinant(x1 - x3, y1 - y3, x1 - x2, y1 - y2) / denom
+        # Denominator for determining intersection (based on 2D cross product)
+        denominator = (-dx_ray * dy_wall + dx_wall * dy_ray)
 
-        # Verificar se o ponto de interseção está dentro do segmento da parede (t deve estar entre 0 e 1)
-        if 0 <= t <= 1:
-            # A linha (ray) não é limitada, então não precisamos verificar o valor de u
-            # Cálculo do ponto de interseção
-            intersection_x = x1 + t * (x2 - x1)
-            intersection_y = y1 + t * (y2 - y1)
+        # If the denominator is zero, the lines are parallel and do not intersect
+        if abs(denominator) < 1e-6:
+            return (ray_start[0] + ray_dir[0], ray_start[1] + ray_dir[1])  # No intersection (or the lines are nearly parallel)
+
+        # Numerators for solving the parametric intersection equations
+        t_wall = (dx_ray * (y3 - y1) - dy_ray * (x3 - x1)) / denominator
+        t_ray = (-dx_wall * (y3 - y1) + dy_wall * (x3 - x1)) / denominator
+
+        # Check if the intersection occurs within the bounds of the wall and along the ray
+        if 0 <= t_wall <= 1 and t_ray >= 0:
+            # Calculate the intersection point
+            intersection_x = x3 + t_ray * dx_ray
+            intersection_y = y3 + t_ray * dy_ray
             return (int(intersection_x), int(intersection_y))
 
-        # Se t estiver fora do intervalo [0, 1], não há interseção com o segmento da parede
-        return len
+        return (ray_start[0] + ray_dir[0], ray_start[1] + ray_dir[1])  # No valid intersection found
+
+
+
+
 
     @staticmethod
     def build_visibility_triangles(walls: set[Edge], source: tuple[int, int], map_size: tuple[int, int]) -> list[tuple[int, int]]:
@@ -101,7 +112,9 @@ class LineOfSight:
                 if wall in open_walls:
                     open_walls.remove(wall)
                 else:
-                    open_walls.append(wall)
+                    next_wall_point = wall.start if wall.end == vertice else wall.end
+                    if LineOfSight.is_clockwise(source, vertice, next_wall_point):
+                        open_walls.append(wall)
 
             # Find the nearest wall
             nearest_wall = None
@@ -111,16 +124,14 @@ class LineOfSight:
 
             # If the nearest wall has changed or nearest_wall is None, create a visibility triangle
             if nearest_wall != current_nearest_wall:
-                if nearest_wall and last_vertice:
-                    polygon.append((source, LineOfSight.projection(nearest_wall, source, vertice), last_vertice))
-                elif nearest_wall:
-                    polygon.append((source, LineOfSight.projection(nearest_wall, source, vertice), vertice))
-                else:
-                    # No wall, just create a triangle to the vertex
-                    polygon.append((source, vertice, polygon[-1][2]))
+                if current_nearest_wall:
+                    ray_dir = (vertice[0] - source[0], vertice[1] - source[1])
+                    polygon.append((source, last_vertice, LineOfSight.raycast(current_nearest_wall, source, ray_dir)))
+                last_vertice = vertice
+                current_nearest_wall = nearest_wall
+            
 
-            current_nearest_wall = nearest_wall
-
+        polygon.append((source, polygon[-1][-1], polygon[0][1]))
         return polygon
 
 

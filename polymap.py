@@ -25,12 +25,8 @@ class Polymap:
 
             # Convert top-left and bottom-right corners of the rectangle to tile coordinates
             x1, y1 = x // tile_size, y // tile_size
-            x2, y2 = (x + w) // tile_size, (y + h) // tile_size
 
-            # Iterate over all tiles that the rectangle covers
-            for i in range(x1, x2 + 1):
-                for j in range(y1, y2 + 1):
-                    tiles.add((i, j))
+            tiles.add((x1, y1))
 
         return tiles
 
