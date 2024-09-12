@@ -6,6 +6,15 @@ class Polymap:
     def __init__(self):
         self.edges = []
 
+    def get_edges_with_y_axis_reverse(self, screen_height):
+        edges = []
+        for edge in self.edges:
+            start = edge.start[0], screen_height - edge.start[1]
+            end = edge.end[0], screen_height - edge.end[1]
+            edges.append(Edge(start, end))
+        return edges
+
+
     def draw(self, rects : set[pygame.Rect], screen, color):
         for edge in self.edges:
             pygame.draw.line(screen, color, edge.start, edge.end, 2)
